@@ -411,17 +411,30 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
             self.populate_all_emojis()
             return
         
-        # Filter emojis with loose matching
+        # Split search text into individual words
+        search_words = search_text.lower().split()
+        
+        # Filter emojis with whole word matching
         cols = 15  # Match the column count used in populate_all_emojis
         filtered_count = 0
         
         for i, emoji_data in enumerate(self.get_all_emojis()):
-            # Loose matching: check if any character from search appears in the search text
-            search_chars = set(search_text.lower())
-            emoji_search_text = emoji_data['search_text']
+            # Get the searchable text fields
+            name = emoji_data['name'].lower()
+            slug = emoji_data['slug'].lower()
+            group = emoji_data['group'].lower()
             
-            # Check if all search characters appear somewhere in the emoji search text
-            if all(char in emoji_search_text for char in search_chars):
+            # Check if all search words match in any of the fields
+            matches = True
+            for word in search_words:
+                # Check if the word appears in name, slug, or group
+                if (word in name or word in slug or word in group):
+                    continue
+                else:
+                    matches = False
+                    break
+            
+            if matches:
                 row = filtered_count // cols
                 col = filtered_count % cols
                 
