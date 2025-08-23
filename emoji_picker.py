@@ -376,8 +376,6 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
                 self.add_to_recent(emoji_char)
                 # Update status to show emoji was copied
                 self.status_label.set_text(f"✅ {emoji_char} copied to clipboard!")
-                # Show notification
-                self.show_notification(f"Copied {emoji_char} to clipboard")
                 # Refresh the recent emojis display
                 self.populate_recent_emojis()
                 # Reset status after 2 seconds
