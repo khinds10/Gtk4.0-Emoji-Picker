@@ -222,8 +222,40 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
         # Use modern GTK 4 styling approach
         self.search_entry.add_css_class("search-entry")
         self.search_entry.connect("activate", self.on_search_activated)  # Changed from "changed" to "activate"
+        
+        # Search status label for showing results/no results message
+        self.search_status_label = Gtk.Label(label="")
+        self.search_status_label.add_css_class("search-entry")
+        self.search_status_label.set_margin_start(10)
+        
+        # Selected emoji display
+        self.selected_emoji_label = Gtk.Label(label="")
+        self.selected_emoji_label.set_size_request(30, 30)
+        self.selected_emoji_label.add_css_class("search-entry")
+        self.selected_emoji_label.set_margin_start(10)
+        
+        # Keyword input
+        keyword_label = Gtk.Label(label="Add keyword:")
+        self.keyword_entry = Gtk.Entry()
+        self.keyword_entry.set_placeholder_text("Enter keyword to add...")
+        self.keyword_entry.add_css_class("search-entry")
+        self.keyword_entry.connect("activate", self.on_keyword_added)
+        self.keyword_entry.set_margin_start(10)
+        
+        # Add keyword button
+        self.add_keyword_button = Gtk.Button(label="Add")
+        self.add_keyword_button.add_css_class("search-entry")
+        self.add_keyword_button.connect("clicked", self.on_keyword_added)
+        self.add_keyword_button.set_sensitive(False)  # Disabled until emoji is selected
+        self.add_keyword_button.set_margin_start(5)
+        
         search_box.append(search_label)
         search_box.append(self.search_entry)
+        search_box.append(self.search_status_label)
+        search_box.append(self.selected_emoji_label)
+        search_box.append(keyword_label)
+        search_box.append(self.keyword_entry)
+        search_box.append(self.add_keyword_button)
         main_box.append(search_box)
         
         # Notebook for tabs - make it expand to fill available space
@@ -318,8 +350,8 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
             self.recent_grid.attach(label, 0, 0, 1, 1)
             return
         
-        # Create emoji buttons - use more columns for wider layout
-        cols = 15  # Increased from 10 to 15 columns
+        # Create emoji buttons - use 9 columns for better layout
+        cols = 9  # Use 9 columns for better layout
         for i, emoji_char in enumerate(recent_emojis):
             row = i // cols
             col = i % cols
@@ -337,8 +369,8 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
         for child in self.all_grid:
             self.all_grid.remove(child)
         
-        # Create emoji buttons - use more columns for wider layout
-        cols = 15  # Increased from 10 to 15 columns
+        # Create emoji buttons - use 9 columns for better layout
+        cols = 9  # Use 9 columns for better layout
         for i, emoji_data in enumerate(self.get_all_emojis()):
             row = i // cols
             col = i % cols
@@ -356,6 +388,10 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
         try:
             self.selected_emoji = emoji_char
             print(f"Emoji clicked: {emoji_char}")
+            
+            # Show selected emoji in the keyword section
+            self.selected_emoji_label.set_text(emoji_char)
+            self.add_keyword_button.set_sensitive(True)
             
             # Update status immediately to show response
             self.status_label.set_text(f"Copying {emoji_char}...")
@@ -398,11 +434,39 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
         search_text = entry.get_text().lower()
         self.filter_emojis(search_text)
     
+    def on_keyword_added(self, widget):
+        """Handle adding a custom keyword to the selected emoji."""
+        if not self.selected_emoji:
+            self.status_label.set_text("❌ No emoji selected")
+            return
+        
+        keyword = self.keyword_entry.get_text().strip().lower()
+        if not keyword:
+            self.status_label.set_text("❌ Please enter a keyword")
+            return
+        
+        try:
+            # Add keyword to emoji data
+            success = self.add_custom_keyword(self.selected_emoji, keyword)
+            if success:
+                self.status_label.set_text(f"✅ Added keyword '{keyword}' to {self.selected_emoji}")
+                self.keyword_entry.set_text("")  # Clear the input
+                # Clear emoji cache so changes take effect
+                self.clear_emoji_cache()
+            else:
+                self.status_label.set_text("❌ Failed to add keyword")
+        except Exception as e:
+            print(f"Error adding keyword: {e}")
+            self.status_label.set_text("❌ Error adding keyword")
+    
     def filter_emojis(self, search_text):
         """Filter emojis based on search text."""
         # Clear all emojis grid
         for child in self.all_grid:
             self.all_grid.remove(child)
+        
+        # Clear search status message
+        self.search_status_label.set_text("")
         
         if not search_text:
             # Show all emojis
@@ -413,7 +477,7 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
         search_words = search_text.lower().split()
         
         # Filter emojis with whole word matching
-        cols = 15  # Match the column count used in populate_all_emojis
+        cols = 9  # Use 9 columns for better layout
         filtered_count = 0
         
         for i, emoji_data in enumerate(self.get_all_emojis()):
@@ -421,12 +485,13 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
             name = emoji_data['name'].lower()
             slug = emoji_data['slug'].lower()
             group = emoji_data['group'].lower()
+            description = emoji_data.get('description', '').lower()
             
             # Check if all search words match in any of the fields
             matches = True
             for word in search_words:
-                # Check if the word appears in name, slug, or group
-                if (word in name or word in slug or word in group):
+                # Check if the word appears in name, slug, group, or description
+                if (word in name or word in slug or word in group or word in description):
                     continue
                 else:
                     matches = False
@@ -446,10 +511,11 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
                 filtered_count += 1
         
         if filtered_count == 0:
-            # Calculate the row position for the bottom of the grid
-            estimated_rows = 20  # Adjust this based on your window size
-            label = Gtk.Label(label=f"No emojis found for '{search_text}'")
-            self.all_grid.attach(label, 0, estimated_rows - 1, cols, 1)  # Place at bottom row
+            # Show "no results" message next to search field
+            self.search_status_label.set_text(f"❌ No emojis found for '{search_text}'")
+        else:
+            # Show count of results
+            self.search_status_label.set_text(f"✅ Found {filtered_count} emoji{'s' if filtered_count != 1 else ''}")
     
     def on_window_close(self, window):
         """Handle window close event."""
@@ -487,8 +553,7 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
             recent_emojis.remove(emoji_char)
         recent_emojis.insert(0, emoji_char)
         
-        # Keep only 20 items
-        recent_emojis = recent_emojis[:20]
+        # No limit on recent emojis - keep all of them
         self.save_recent_emojis(recent_emojis)
     
     def load_emoji_data(self):
@@ -528,14 +593,15 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
         # Convert JSON data to the expected format
         emojis = []
         for emoji_char, emoji_info in emoji_data.items():
-            # Create search text from name, slug, and group
-            search_text = f"{emoji_info.get('name', '')} {emoji_info.get('slug', '')} {emoji_info.get('group', '')}".lower()
+            # Create search text from name, slug, group, and description
+            search_text = f"{emoji_info.get('name', '')} {emoji_info.get('slug', '')} {emoji_info.get('group', '')} {emoji_info.get('description', '')}".lower()
             
             emojis.append({
                 'char': emoji_char,
                 'name': emoji_info.get('name', ''),
                 'slug': emoji_info.get('slug', ''),
                 'group': emoji_info.get('group', ''),
+                'description': emoji_info.get('description', ''),
                 'search_text': search_text
             })
         
@@ -547,6 +613,46 @@ class EmojiPickerWindow(Gtk.ApplicationWindow):
         """Clear the emoji cache (useful if JSON file changes)."""
         self._emoji_cache = None
         self._all_emojis_cache = None
+    
+    def add_custom_keyword(self, emoji_char, keyword):
+        """Add a custom keyword to an emoji's description."""
+        try:
+            # Load current emoji data
+            emoji_data = self.load_emoji_data()
+            if not emoji_data or emoji_char not in emoji_data:
+                print(f"Emoji {emoji_char} not found in data")
+                return False
+            
+            # Get current description
+            current_description = emoji_data[emoji_char].get('description', '')
+            
+            # Check if keyword already exists
+            if keyword in current_description.lower():
+                print(f"Keyword '{keyword}' already exists for {emoji_char}")
+                return False
+            
+            # Add keyword to description
+            if current_description:
+                new_description = f"{current_description} {keyword}"
+            else:
+                new_description = keyword
+            
+            # Update the emoji data
+            emoji_data[emoji_char]['description'] = new_description
+            
+            # Save back to file
+            script_dir = Path(__file__).parent
+            emoji_file = script_dir / "emoji.json"
+            
+            with open(emoji_file, 'w', encoding='utf-8') as f:
+                json.dump(emoji_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"Successfully added keyword '{keyword}' to {emoji_char}")
+            return True
+            
+        except Exception as e:
+            print(f"Error adding custom keyword: {e}")
+            return False
     
     def copy_to_clipboard(self, text):
         """Copy text to clipboard using system commands."""
